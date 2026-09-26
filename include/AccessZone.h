@@ -12,5 +12,6 @@ public:
     virtual void unlock() = 0;
     virtual void restrict() = 0;
     virtual AccessLevel level() = 0;
+    virtual AccessZone* find(const std::string& targetName);
     const std::string& getName();
 };

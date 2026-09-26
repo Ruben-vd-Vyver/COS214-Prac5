@@ -13,4 +13,5 @@ public:
     void unlock() override;
     void restrict() override;
     AccessLevel level() override;
+    AccessZone* find(const std::string& targetName) override;
 };

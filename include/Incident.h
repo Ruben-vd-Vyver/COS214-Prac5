@@ -8,6 +8,7 @@ class Incident {
     std::string type;
     std::string location;
     Severity severity;
+    IncidentState* state; // Owning; State pattern current state.
 public:
     Incident(int id, const std::string& type, const std::string& location,Severity severity);
     ~Incident();
