@@ -28,9 +28,9 @@ int main() {
     ResponseCenter responseCenter;                    // Mediator
     AccessControlCentre accessControl(&responseCenter); // Colleague + Composite root
 
-    AlertService alertService;                          // uses Adapter + normal channel
-    alertService.addChannel(std::unique_ptr<ConsoleAlertChannel>(new ConsoleAlertChannel()));
-    alertService.addChannel(std::unique_ptr<PagerAlertAdapter>(new PagerAlertAdapter())); // Adapter
+    AlertService alertService;
+    alertService.addChannel(std::unique_ptr<AlertChannel>(new ConsoleAlertChannel()));
+    alertService.addChannel(std::unique_ptr<AlertChannel>(new PagerAlertAdapter())); // Adapter
 
     SecurityTeam securityTeam(&responseCenter);
     MedicalTeam medicalTeam(&responseCenter);
@@ -41,54 +41,87 @@ int main() {
     responseCenter.addComponent(&facilitiesTeam);
     responseCenter.addComponent(&accessControl);
 
-    EmergencyResponseFacade facade(registry, responseCenter, accessControl, alertService);
-    OperatorConsole console; // Invoker
+    EmergencyResponseFacade facade(registry, responseCenter, accessControl, alertService); // Facade
+    OperatorConsole console;                                                               // Invoker
 
-    // ===================================================================
-    // Scenario 1: Facade-driven building emergency (Facade, Mediator,
-    // Composite, State, Adapter all appear in this single flow).
-    // ===================================================================
-    std::cout << "==================== SCENARIO 1 ====================" << std::endl;
+    // SCENARIO 1: "Laboratory fire in the Science Building" (High severity)
+    // A single Facade call hides registry, access control, mediator-driven
+    // dispatch and alerting. 
+    // Patterns: Facade, Mediator, Composite, State, Adapter.
+
+    banner("SCENARIO 1: Fire in the Science Building (Facade workflow)");
+
+    step("Operator calls ONE facade operation: handleBuildingEmergency");
     Incident& fire = facade.handleBuildingEmergency("Fire", "ScienceBuilding", Severity::High);
-    std::cout << "Incident #" << fire.getId() << " status: " << fire.getState()->name() << std::endl;
+    showStatus(fire);
 
+    step("Subsystems remain independently usable: lock one lab directly");
+    accessControl.secureArea("ScienceBuilding-Lab1", AccessLevel::Locked);
+
+    step("Failure case: securing a zone that does not exist");
+    accessControl.secureArea("Gymnasium", AccessLevel::Locked);
+
+    step("Fire brought under control: facade stands the response down");
     facade.standDown(fire.getId());
-    std::cout << "Incident #" << fire.getId() << " status: " << fire.getState()->name() << std::endl;
+    showStatus(fire);
 
-    // ===================================================================
-    // Scenario 2: Operator-driven response using Commands (Command,
-    // Mediator, Adapter, Composite, State all appear here too).
-    // ===================================================================
-    std::cout << "\n==================== SCENARIO 2 ====================" << std::endl;
-    Incident& intrusion = registry.registerIncident("Intrusion", "Library-ArchiveRoom", Severity::Critical);
+    // SCENARIO 2: "Intrusion at the Library archive" (Critical severity)
+    // The operator drives the response with Command objects. A dispatch
+    // command triggers the Mediator to coordinate the other colleagues.
+    // Patterns: Command, Mediator, Composite, State, Adapter.
+    banner("SCENARIO 2: Intrusion in the Library (Operator Command workflow)");
 
-    console.submit(std::unique_ptr<DispatchUnitCommand>(
+    Incident& intrusion = registry.registerIncident("Intrusion", "Library-ArchiveRoom",
+                                                    Severity::Critical);
+    showStatus(intrusion);
+
+    step("Command 1: dispatch security (Mediator then coordinates the other colleagues)");
+    console.submit(std::unique_ptr<Command>(
         new DispatchUnitCommand(responseCenter, UnitKind::Security, intrusion)));
+    showStatus(intrusion);
 
-    console.submit(std::unique_ptr<SecureAreaCommand>(
+    step("Command 2: lock the archive room");
+    console.submit(std::unique_ptr<Command>(
         new SecureAreaCommand(accessControl, "Library-ArchiveRoom", AccessLevel::Locked)));
 
-    console.submit(std::unique_ptr<IssueAlertCommand>(
-        new IssueAlertCommand(alertService, "Library-ArchiveRoom",
-                               "Intrusion detected, area locked down.", Severity::Critical)));
+    step("Command 3: issue an alert (console channel + legacy pager via Adapter)");
+    console.submit(std::unique_ptr<Command>(
+        new IssueAlertCommand(alertService, "Library",
+                              "Intruder in archive room. Stay clear of the Library.",
+                              Severity::Critical)));
 
-    std::cout << "Incident #" << intrusion.getId() << " status: " << intrusion.getState()->name()
-               << std::endl;
-
-    // Undo the last command to show Command's reversible-request behaviour.
-    console.undoLast();
-
-    // A full evacuation, combining two receivers in one command.
-    console.submit(std::unique_ptr<EvacuateCommand>(
+    step("Command 4: evacuate the whole Library (Composite cascades to every room)");
+    console.submit(std::unique_ptr<Command>(
         new EvacuateCommand(accessControl, alertService, "Library")));
 
-    // Demonstrate a failure / invalid-operation case handled sensibly.
+    step("Operator changes their mind: undo the evacuation");
+    console.undoLast();
+
+    step("Intrusion neutralised: State pattern walks the incident to Resolved");
     intrusion.contain();
     intrusion.resolve();
-    intrusion.dispatch(); // invalid: already resolved - handled, not silently ignored.
+    showStatus(intrusion);
 
+    // Failure & invalid-operation cases
+    banner("FAILURE CASES");
+
+    step("Invalid transition: dispatching an already resolved incident");
+    intrusion.dispatch();
+
+    step("False alarm: register, cancel, then try to dispatch to it");
+    Incident& falseAlarm = registry.registerIncident("Suspicious package", "Library-MainFloor",
+                                                     Severity::Low);
+    falseAlarm.cancel();
+    showStatus(falseAlarm);
+    falseAlarm.dispatch();
+
+    step("Undo on an empty console");
+    OperatorConsole emptyConsole;
+    emptyConsole.undoLast();
+
+    step("Lookup of an unknown incident id");
     try {
-        registry.find(999); // invalid: unknown incident id.
+        registry.find(999);
     } catch (const std::out_of_range& ex) {
         std::cout << "[main] Handled expected error: " << ex.what() << std::endl;
     }
