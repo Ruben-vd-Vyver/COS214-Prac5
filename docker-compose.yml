@@ -1,0 +1,31 @@
+services:
+  # ── The demo: `docker compose up --build` starts ONLY this service ──
+  campusguard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime          # slim runtime stage
+    image: campusguard:latest
+    # A pseudo-terminal makes stdout line-buffered, so the narrated output
+    # appears live during the demo instead of in one lump at exit.
+    tty: true
+    stdin_open: false
+    # One-shot demo application: do not restart after it finishes.
+    restart: "no"
+
+  # ── Valgrind / GDB environment (only used when asked for explicitly) ──
+  #   docker compose run --rm debug valgrind --leak-check=full ./campusguard
+  #   docker compose run --rm debug gdb ./campusguard
+  debug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: debug
+    image: campusguard:debug
+    profiles: ["debug"]        # excluded from plain `docker compose up`
+    cap_add:
+      - SYS_PTRACE             # required for GDB inside a container
+    security_opt:
+      - seccomp:unconfined     # lets GDB disable ASLR
+    stdin_open: true
+    tty: true
