@@ -22,6 +22,23 @@
 #include <iostream>
 #include <memory>
 
+void banner(const std::string& title) {
+    std::cout << "\n---\n"
+              << title << "\n"
+              << "---\n";
+}
+ 
+void step(const std::string& text) {
+    std::cout << "\n--- " << text << " ---" << std::endl;
+}
+ 
+void showStatus(Incident& incident) {
+    std::cout << ">> Incident #" << incident.getId() << " (" << incident.getType() << " @ "
+              << incident.getLocation() << ") status: " << incident.getState()->name()
+              << std::endl;
+}
+
+
 int main() {
     // --- Core subsystems ---------------------------------------------
     IncidentRegistry registry;
